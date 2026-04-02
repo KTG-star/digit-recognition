@@ -1,6 +1,4 @@
-streamlit
-scikit-learn
+tensorflow
 numpy
-matplotlib
 Pillow
-streamlit-drawable-canvas
+gradio
