@@ -3,58 +3,65 @@ import tensorflow as tf
 import numpy as np
 from PIL import Image, ImageOps
 
-# 1. THE BRAIN: Deep CNN (High Efficiency)
+# 1. THE BRAIN: Deep CNN with Batch Normalization
 def get_model():
     try:
-        # Tries to load the saved model
-        return tf.keras.models.load_model('robust_cnn_model.h5')
+        return tf.keras.models.load_model('universal_model.h5')
     except:
-        # Trains a professional-grade CNN if no model exists
         (x_train, y_train), _ = tf.keras.datasets.mnist.load_data()
         x_train = x_train.reshape(-1, 28, 28, 1) / 255.0
         
         model = tf.keras.models.Sequential([
             tf.keras.layers.Conv2D(32, (3,3), activation='relu', input_shape=(28,28,1)),
-            tf.keras.layers.BatchNormalization(), # Stabilizes for thin/thick lines
+            tf.keras.layers.BatchNormalization(), # Makes the model ignore stroke thickness
             tf.keras.layers.MaxPooling2D(2,2),
             tf.keras.layers.Conv2D(64, (3,3), activation='relu'),
             tf.keras.layers.BatchNormalization(),
             tf.keras.layers.MaxPooling2D(2,2),
             tf.keras.layers.Flatten(),
             tf.keras.layers.Dense(128, activation='relu'),
-            tf.keras.layers.Dropout(0.4), # Makes model flexible for messy styles
+            tf.keras.layers.Dropout(0.4), # Highly flexible to messy handwriting
             tf.keras.layers.Dense(10, activation='softmax')
         ])
         
         model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-        model.fit(x_train, y_train, epochs=5) 
-        model.save('robust_cnn_model.h5')
+        # Train with more epochs for higher "perfection"
+        model.fit(x_train, y_train, epochs=10) 
+        model.save('universal_model.h5')
         return model
 
 model = get_model()
 
-# 2. THE EYE: Universal Pre-processing
+# 2. THE EYE: Maximum Efficiency Pre-processing
 def predict(data):
-    if data is None or 'composite' not in data:
-        return "Please draw a number!"
+    if data is None: return None
     
-    # Get the "ink" layer (Alpha channel)
-    img = Image.fromarray(data['composite'][:,:,3].astype('uint8'))
+    # Extract image and convert to Grayscale
+    # Gradio 'composite' contains the drawing
+    img = Image.fromarray(data['composite'].astype('uint8')).convert('L')
     
-    # DYNAMIC CROP: This is the "Efficiency" secret. 
-    # It finds the digit even if it's tiny or in a corner.
+    # STEP A: THE INVERSION FIX
+    # If the user draws black-on-white, we MUST flip it to white-on-black for the AI
+    stat = np.array(img)
+    if stat.mean() > 127:
+        img = ImageOps.invert(img)
+    
+    # STEP B: DYNAMIC CROPPING (The "Any Position" Fix)
+    # This finds the exact box where the ink is and ignores the rest of the screen
     bbox = img.getbbox()
     if bbox:
         img = img.crop(bbox)
     
-    # SCALE & CENTER: Centers the digit on a 28x28 black background
+    # STEP C: ASPECT RATIO PRESERVATION & CENTERING
+    # This prevents the number from getting "squashed" when resizing
     width, height = img.size
     max_dim = max(width, height)
-    new_img = Image.new('L', (max_dim + 20, max_dim + 20), 0)
-    new_img.paste(img, ((max_dim - width) // 2 + 10, (max_dim - height) // 2 + 10))
+    # Create a square canvas with a margin
+    container = Image.new('L', (max_dim + 40, max_dim + 40), 0)
+    container.paste(img, ((max_dim - width) // 2 + 20, (max_dim - height) // 2 + 20))
     
-    # FINAL FORMATTING
-    img = new_img.resize((28, 28))
+    # STEP D: FINAL PREP
+    img = container.resize((28, 28), Image.Resampling.LANCZOS)
     img_array = np.array(img).reshape(1, 28, 28, 1) / 255.0
     
     # PREDICT
@@ -64,10 +71,10 @@ def predict(data):
 # 3. INTERFACE
 interface = gr.Interface(
     fn=predict, 
-    inputs=gr.Sketchpad(label="Draw Naturally (Any Size/Style)", type="numpy"), 
+    inputs=gr.Sketchpad(label="Draw Any Number (Any Style/Size/Place)", type="numpy"), 
     outputs=gr.Label(num_top_classes=3),
-    title="Universal Digit Recognizer (CNN)",
-    description="Optimized for Task 5. This system handles various handwriting styles, sizes, and positions."
+    title="Universal Digit Recognition System",
+    description="Optimized for Task 5: Uses CNN architecture with dynamic cropping and inversion handling."
 )
 
 interface.launch()
